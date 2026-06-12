@@ -20,7 +20,16 @@ import {
   Puzzle, 
   Globe, 
   Sparkles,
-  HelpCircle
+  HelpCircle,
+  Cpu,
+  Key,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Coins,
+  Trash2,
+  Plug,
+  ExternalLink
 } from 'lucide-react';
 
 export default function RightPanel() {
@@ -46,7 +55,20 @@ export default function RightPanel() {
     activePlugins,
     togglePlugin,
     runAudits,
-    applyHTMLSanitizerHeal
+    applyHTMLSanitizerHeal,
+    
+    // LLM States & Methods
+    llmProvider,
+    openRouterKey,
+    selectedModel,
+    tokenUsage,
+    estimatedCost,
+    ollamaStatus,
+    availableModels,
+    setLlmProvider,
+    setOpenRouterKey,
+    setSelectedModel,
+    resetTokenUsage
   } = useStore();
 
   const [newPageName, setNewPageName] = useState('');
@@ -75,6 +97,38 @@ export default function RightPanel() {
     updateActivePageCanvas(fixed);
     createHistoryCheckpoint("Auto-Healed Screen Reader Compliance");
     runAudits();
+  };
+
+  const [isTestingConn, setIsTestingConn] = useState(false);
+  const [connTestResult, setConnTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showKey, setShowKey] = useState(false);
+
+  const handleTestConnection = async () => {
+    setIsTestingConn(true);
+    setConnTestResult(null);
+    try {
+      const resp = await fetch('/api/ai/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: llmProvider,
+          openRouterKey: openRouterKey,
+          model: selectedModel
+        })
+      });
+      const data = await resp.json();
+      setConnTestResult({
+        success: data.success,
+        message: data.message
+      });
+    } catch (err: any) {
+      setConnTestResult({
+        success: false,
+        message: `Connection error: ${err?.message || String(err)}`
+      });
+    } finally {
+      setIsTestingConn(false);
+    }
   };
 
   return (
@@ -433,6 +487,152 @@ export default function RightPanel() {
           </div>
         )}
 
+      </div>
+
+      {/* Sticky AI Provider Bridge Footer Panel */}
+      <div class="border-t border-slate-850 bg-[#090b15] p-3.5 space-y-3 shrink-0 text-slate-300">
+        <div class="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          <div class="flex items-center gap-1.5">
+            <Cpu class="w-3.5 h-3.5 text-violet-400" />
+            <span>AI Provider Bridge</span>
+          </div>
+          <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono font-normal">
+            {llmProvider === 'ollama' ? 'Local' : 'Cloud'}
+          </span>
+        </div>
+
+        {/* Toggle between Ollama and OpenRouter */}
+        <div class="grid grid-cols-2 gap-1.5 p-0.5 bg-slate-950 rounded-lg border border-slate-850">
+          <button 
+            onClick={() => { setLlmProvider('ollama'); setConnTestResult(null); }}
+            class={`py-1 text-[10px] font-bold rounded-md transition-all ${llmProvider === 'ollama' ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 shadow-inner' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            Ollama (Offline)
+          </button>
+          <button 
+            onClick={() => { setLlmProvider('openrouter'); setConnTestResult(null); }}
+            class={`py-1 text-[10px] font-bold rounded-md transition-all ${llmProvider === 'openrouter' ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 shadow-inner' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            OpenRouter (Cloud)
+          </button>
+        </div>
+
+        {/* Input variables based on chosen provider */}
+        {llmProvider === 'openrouter' ? (
+          <div class="space-y-2">
+            <div>
+              <label class="text-[9px] font-bold text-slate-400 block uppercase mb-1">OpenRouter Key</label>
+              <div class="relative">
+                <input 
+                  type={showKey ? 'text' : 'password'}
+                  placeholder="sk-or-v1-..."
+                  value={openRouterKey}
+                  onChange={(e) => setOpenRouterKey(e.target.value)}
+                  class="w-full text-[11px] bg-slate-950 border border-slate-850 rounded px-2.5 py-1.5 pr-8 text-violet-400 font-mono placeholder-slate-700 focus:outline-none focus:border-indigo-500"
+                />
+                <button 
+                  onClick={() => setShowKey(!showKey)}
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400"
+                >
+                  {showKey ? <EyeOff class="w-3.5 h-3.5" /> : <Eye class="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-[9px] font-bold text-slate-400 block uppercase mb-1">Cloud Model</label>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                class="w-full text-[11px] bg-slate-950 border border-slate-850 text-slate-300 rounded px-2.5 py-1.5 font-sans focus:outline-none focus:border-indigo-500"
+              >
+                <option value="meta-llama/llama-3.1-70b-instruct">Llama 3.1 70B (Instruct)</option>
+                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                <option value="mistralai/mistral-large">Mistral Large</option>
+                <option value="deepseek/deepseek-coder">DeepSeek Coder V2</option>
+                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+              </select>
+            </div>
+          </div>
+        ) : (
+          <div class="space-y-2">
+            <div>
+              <div class="flex items-center justify-between">
+                <label class="text-[9px] font-bold text-slate-400 block uppercase mb-1">Ollama Status</label>
+                <span class={`text-[8px] font-bold px-1.5 rounded uppercase ${
+                  ollamaStatus === 'connected' ? 'bg-emerald-950 text-emerald-400' :
+                  ollamaStatus === 'checking' ? 'bg-slate-800 text-slate-400' : 'bg-red-950 text-red-400'
+                }`}>
+                  {ollamaStatus}
+                </span>
+              </div>
+              <p class="text-[9px] text-slate-500 italic mt-0.5 leading-normal">
+                {ollamaStatus === 'connected' 
+                  ? 'Local active. Unlimited free requests.' 
+                  : 'Requires local server daemon running on your computer.'}
+              </p>
+            </div>
+
+            <div>
+              <label class="text-[9px] font-bold text-slate-400 block uppercase mb-1">Ollama Model</label>
+              <select
+                value={selectedModel.startsWith('meta-') ? 'llama3' : selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                class="w-full text-[11px] bg-slate-950 border border-slate-850 text-slate-300 rounded px-2.5 py-1.5 font-sans focus:outline-none focus:border-indigo-500"
+              >
+                {(availableModels && availableModels.length > 0) ? (
+                  availableModels.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))
+                ) : (
+                  <>
+                    <option value="llama3.1">llama3.1</option>
+                    <option value="llama3">llama3</option>
+                    <option value="mistral">mistral</option>
+                    <option value="codellama">codellama</option>
+                  </>
+                )}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Test Connection Button */}
+        <div class="flex items-center gap-2 pt-1">
+          <button
+            onClick={handleTestConnection}
+            disabled={isTestingConn}
+            class="w-full py-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded text-[10px] font-bold text-slate-300 hover:text-white flex items-center justify-center gap-1.5 transition"
+          >
+            {isTestingConn ? <RefreshCw class="w-3 h-3 animate-spin text-purple-400" /> : <Plug class="w-3 text-purple-400" />}
+            <span>Test Connection</span>
+          </button>
+        </div>
+
+        {/* Diagnostics banner */}
+        {connTestResult && (
+          <div class={`p-2 rounded text-[10px] font-semibold border ${connTestResult.success ? 'bg-emerald-950/20 border-emerald-900/40 text-emerald-400' : 'bg-rose-950/20 border-rose-900/40 text-rose-400'}`}>
+            <span>{connTestResult.message}</span>
+          </div>
+        )}
+
+        {/* Cost stats */}
+        <div class="bg-slate-950 rounded-lg p-2.5 flex items-center justify-between border border-slate-850 text-[10px]">
+          <div class="space-y-0.5">
+            <span class="text-slate-500 font-bold block text-[8px] uppercase tracking-wider">Estimated Costs</span>
+            <div class="flex items-center gap-1 text-slate-300 font-mono">
+              <Coins class="w-3.5 h-3.5 text-amber-500" />
+              <span>Tokens: {tokenUsage.toLocaleString()} | Cost: ${estimatedCost.toFixed(4)}</span>
+            </div>
+          </div>
+          <button 
+            onClick={resetTokenUsage}
+            class="text-slate-500 hover:text-slate-300 p-1"
+            title="Clear counters"
+          >
+            <Trash2 class="w-3 h-3" />
+          </button>
+        </div>
       </div>
     </div>
   );

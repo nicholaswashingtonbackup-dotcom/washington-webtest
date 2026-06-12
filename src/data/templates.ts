@@ -317,7 +317,7 @@ export const COMPONENT_TEMPLATES: Record<string, ComponentTemplate> = {
           <span class="font-mono text-xs">+</span>
         </h4>
         <p class="mt-2 text-sm opacity-70 leading-relaxed">
-          Yes! If Ollama is offline, DesignForge seamlessly routes requests to the server-side cloud Gemini AI model, with a secondary hybrid rule-based template fallback.
+          Yes! If Ollama is offline, SiteForge seamlessly routes requests to the server-side cloud Gemini AI model, with a secondary hybrid rule-based template fallback.
         </p>
       </div>
 
@@ -364,7 +364,7 @@ export const COMPONENT_TEMPLATES: Record<string, ComponentTemplate> = {
     html: `
 <section id="contact" class="py-24 px-6" style="background-color: var(--bg-color, #0f0f23);">
   <div class="max-w-2xl mx-auto border p-10 shadow-xl" style="border-radius: var(--border-radius, 12px); border-color: rgba(255,255,255,0.08); background-color: rgba(255,255,255,0.01);">
-    <h3 class="text-2xl font-bold mb-2">Connect with DesignForge</h3>
+    <h3 class="text-2xl font-bold mb-2">Connect with SiteForge</h3>
     <p class="text-sm opacity-65 mb-8">Let's chat about establishing premium multi-device sandboxes for your branding operations.</p>
     
     <form class="space-y-6">

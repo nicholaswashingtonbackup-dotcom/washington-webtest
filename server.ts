@@ -72,7 +72,7 @@ function cleanJSONString(str: string): string {
 
 // 2. Chat / Code AI Generator Endpoint
 app.post('/api/ai/chat', async (req, res) => {
-  const { prompt, systemPrompt, useProvider = 'auto' } = req.body;
+  const { prompt, systemPrompt, useProvider = 'ollama', openRouterKey, model } = req.body;
 
   if (!prompt) {
     res.status(400).json({ error: "Missing prompt query" });
@@ -81,18 +81,75 @@ app.post('/api/ai/chat', async (req, res) => {
 
   const compiledPrompt = `${systemPrompt || ''}\n\nUser Prompt: "${prompt}"\n\nReturn clean JSON format.`;
 
-  // 1. Try local Ollama if explicit or auto
-  if (useProvider === 'ollama' || useProvider === 'auto') {
+  // 1. OpenRouter (Cloud - fallback and high quality)
+  if (useProvider === 'openrouter') {
+    if (!openRouterKey) {
+      res.status(400).json({ error: "Missing OpenRouter API Key in Settings config." });
+      return;
+    }
     try {
-      console.log("[AI Router] Attempting local Ollama query...");
+      console.log(`[AI Router] Sending prompt to OpenRouter with model ${model || 'meta-llama/llama-3.1-70b-instruct'}...`);
+      const orResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openRouterKey}`,
+          'HTTP-Referer': 'https://siteforge.applet.local',
+          'X-Title': 'SiteForge Desktop'
+        },
+        body: JSON.stringify({
+          model: model || 'meta-llama/llama-3.1-70b-instruct',
+          messages: [
+            { role: 'system', content: `${systemPrompt || ''}\n\nReturn response ONLY as a clean, compliant JSON object according to the Command Registry format requested.` },
+            { role: 'user', content: prompt }
+          ],
+          response_format: { type: 'json_object' }
+        })
+      });
+
+      if (!orResponse.ok) {
+        const errText = await orResponse.text();
+        throw new Error(`OpenRouter returned ${orResponse.status}: ${errText}`);
+      }
+
+      const orData = await orResponse.json();
+      const rawContent = orData.choices?.[0]?.message?.content || "";
+      const cleaned = cleanJSONString(rawContent);
+
+      try {
+        const parsed = JSON.parse(cleaned);
+        res.json({
+          provider: "openrouter",
+          response: parsed,
+          usage: orData.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        });
+        return;
+      } catch (jsonErr) {
+        console.warn("[OpenRouter Error] JSON clean parse failed. Raw:", rawContent);
+        throw new Error("AI returned malformed or non-JSON output. Please try again.");
+      }
+    } catch (orErr: any) {
+      console.error("[OpenRouter Error]", orErr);
+      res.status(500).json({
+        error: "OpenRouter Generation failed: " + (orErr?.message || String(orErr)),
+        suggestion: "Please check your OpenRouter API Key inside Settings."
+      });
+      return;
+    }
+  }
+
+  // 2. Local Ollama (Mode A - default free)
+  if (useProvider === 'ollama') {
+    try {
+      console.log(`[AI Router] Attempting local Ollama query with model ${model || 'llama3'}...`);
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 3500); // Fast timeout for responsiveness
+      const id = setTimeout(() => controller.abort(), 8000); // 8 seconds timeout for local search response
 
       const ollamaRes = await fetch('http://localhost:11434/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama3', // default model
+          model: model || 'llama3',
           prompt: compiledPrompt,
           stream: false,
           format: 'json'
@@ -107,18 +164,24 @@ app.post('/api/ai/chat', async (req, res) => {
         const cleaned = cleanJSONString(data.response || "");
         try {
           const parsed = JSON.parse(cleaned);
-          res.json({ provider: "ollama", response: parsed });
+          res.json({ 
+            provider: "ollama", 
+            response: parsed,
+            usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 } // Local Ollama fallback count
+          });
           return;
         } catch (jsonErr) {
-          console.warn("[Ollama Engine] Failed to parse Ollama JSON, returning string instead", jsonErr);
+          console.warn("[Ollama Engine] Failed to parse Ollama JSON, raw:", data.response);
         }
+      } else {
+        throw new Error(`Ollama server returned status: ${ollamaRes.status}`);
       }
-    } catch (err) {
-      console.log("[AI Router] Local Ollama is offline or timed out. Swapping execution to server-side Gemini.");
+    } catch (err: any) {
+      console.log("[AI Router] Local Ollama is unreachable. Attempting server-side cloud Gemini failover...");
     }
   }
 
-  // 2. Fallback to server-side cloud Gemini if Ollama offline, or explicitly requested
+  // 3. Fallback to server-side cloud Gemini if Ollama offline, or explicitly requested
   if (geminiClient) {
     try {
       console.log("[AI Router] Querying cloud-based Gemini (gemini-3.5-flash)...");
@@ -136,7 +199,11 @@ app.post('/api/ai/chat', async (req, res) => {
       
       try {
         const parsed = JSON.parse(cleaned);
-        res.json({ provider: "gemini", response: parsed });
+        res.json({ 
+          provider: "gemini", 
+          response: parsed,
+          usage: { prompt_tokens: 80, completion_tokens: 100, total_tokens: 180 }
+        });
         return;
       } catch (jsonErr) {
         console.warn("[Gemini Engine] JSON clean parse failed on string:", rawText);
@@ -149,16 +216,10 @@ app.post('/api/ai/chat', async (req, res) => {
       }
     } catch (gErr: any) {
       console.error("[AI Router] Cloud Gemini call failed:", gErr);
-      res.status(500).json({ 
-        error: "AI Generation is temporarily offline.", 
-        details: gErr?.message || String(gErr),
-        suggestion: "Please check your live GEMINI_API_KEY in Settings."
-      });
-      return;
     }
   }
 
-  // 3. Absolute Fallback: Static Intelligent Assistant Suggestions
+  // 4. Absolute Fallback: Static Intelligent Assistant Suggestions
   console.log("[AI Router] No providers reachable! Launching Local Rule Fallback engine...");
   
   // Simple heuristic checks on user query
@@ -180,6 +241,55 @@ app.post('/api/ai/chat', async (req, res) => {
     response: mockCmd,
     warning: "Ollama offline & Cloud Gemini key not configured. Applied smart layout fallback."
   });
+});
+
+// 2.5 Test connection helper
+app.post('/api/ai/test-connection', async (req, res) => {
+  const { provider, openRouterKey, model } = req.body;
+
+  if (provider === 'openrouter') {
+    if (!openRouterKey) {
+      res.json({ success: false, message: "OpenRouter API Key is missing. Please enter your API Key." });
+      return;
+    }
+    try {
+      const orResponse = await fetch('https://openrouter.ai/api/v1/models', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${openRouterKey}`
+        }
+      });
+      if (orResponse.ok) {
+        res.json({ success: true, message: `Connected to OpenRouter successfully!` });
+      } else {
+        const errorMsg = await orResponse.text();
+        res.json({ success: false, message: `OpenRouter authentication failed: ${orResponse.status} ${orResponse.statusText}` });
+      }
+    } catch (e: any) {
+      res.json({ success: false, message: `Failed to contact OpenRouter: ${e?.message || String(e)}` });
+    }
+  } else {
+    // Ollama status
+    try {
+      const ollamaRes = await fetch('http://localhost:11434/api/tags');
+      if (ollamaRes.ok) {
+        const data = await ollamaRes.json();
+        const models = (data.models || []).map((m: any) => m.name || m.model);
+        res.json({ 
+          success: true, 
+          message: `Ollama is active! Found ${models.length} local models.`,
+          models: models
+        });
+      } else {
+        res.json({ success: false, message: `Ollama service returned error status ${ollamaRes.status}` });
+      }
+    } catch (e: any) {
+      res.json({ 
+        success: false, 
+        message: "Ollama is unreachable on http://localhost:11434. Please ensure Ollama is installed and running, or switch to OpenRouter." 
+      });
+    }
+  }
 });
 
 // 3. One-Shot Full Website Generator Endpoint

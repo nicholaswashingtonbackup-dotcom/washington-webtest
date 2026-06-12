@@ -33,6 +33,13 @@ interface SiteForgeState {
   ollamaStatus: 'connected' | 'offline' | 'queued' | 'checking';
   availableModels: string[];
   
+  // LLM Provider Bridge
+  llmProvider: 'ollama' | 'openrouter';
+  openRouterKey: string;
+  selectedModel: string;
+  tokenUsage: number;
+  estimatedCost: number;
+  
   // Database / assets
   assets: SavedAsset[];
   
@@ -75,6 +82,13 @@ interface SiteForgeState {
   setActiveLeftTab: (tab: 'components' | 'settings' | 'history' | 'brief') => void;
   toggleCodeView: () => void;
   setOllamaStatus: (status: 'connected' | 'offline' | 'queued' | 'checking', models?: string[]) => void;
+  
+  // LLM Bridge methods
+  setLlmProvider: (provider: 'ollama' | 'openrouter') => void;
+  setOpenRouterKey: (key: string) => void;
+  setSelectedModel: (model: string) => void;
+  addTokenUsage: (tokens: number, estimatedCost: number) => void;
+  resetTokenUsage: () => void;
   
   // Snapshot/Undo stacks
   createHistoryCheckpoint: (label: string) => void;
@@ -151,6 +165,13 @@ export const useStore = create<SiteForgeState>((set, get) => {
     codeViewOpen: false,
     ollamaStatus: 'checking',
     availableModels: [],
+    
+    // LLM state initialization
+    llmProvider: (localStorage.getItem('siteforge_llm_provider') as 'ollama' | 'openrouter') || 'ollama',
+    openRouterKey: localStorage.getItem('siteforge_openrouter_key') || '',
+    selectedModel: localStorage.getItem('siteforge_openrouter_model') || 'meta-llama/llama-3.1-70b-instruct',
+    tokenUsage: parseInt(localStorage.getItem('siteforge_token_usage') || '0', 10),
+    estimatedCost: parseFloat(localStorage.getItem('siteforge_estimated_cost') || '0.00'),
     assets: [],
     safetyLogs: [],
     activePlugins: BUILTIN_PLUGINS,
@@ -329,6 +350,40 @@ export const useStore = create<SiteForgeState>((set, get) => {
       ollamaStatus: status,
       availableModels: models || state.availableModels
     })),
+
+    setLlmProvider: (provider) => {
+      localStorage.setItem('siteforge_llm_provider', provider);
+      set({ llmProvider: provider });
+    },
+
+    setOpenRouterKey: (key) => {
+      localStorage.setItem('siteforge_openrouter_key', key);
+      set({ openRouterKey: key });
+    },
+
+    setSelectedModel: (model) => {
+      localStorage.setItem('siteforge_openrouter_model', model);
+      set({ selectedModel: model });
+    },
+
+    addTokenUsage: (tokens, cost) => {
+      set((state) => {
+        const nextTokens = state.tokenUsage + tokens;
+        const nextCost = state.estimatedCost + cost;
+        localStorage.setItem('siteforge_token_usage', nextTokens.toString());
+        localStorage.setItem('siteforge_estimated_cost', nextCost.toFixed(4));
+        return {
+          tokenUsage: nextTokens,
+          estimatedCost: nextCost
+        };
+      });
+    },
+
+    resetTokenUsage: () => {
+      localStorage.setItem('siteforge_token_usage', '0');
+      localStorage.setItem('siteforge_estimated_cost', '0.00');
+      set({ tokenUsage: 0, estimatedCost: 0 });
+    },
 
     createHistoryCheckpoint: (label) => {
       const { pages, activePageId, designTokens } = get();

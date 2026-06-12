@@ -20,7 +20,10 @@ export default function VoiceAgent() {
     applyTokens,
     addPage,
     runAudits,
-    createHistoryCheckpoint
+    createHistoryCheckpoint,
+    llmProvider,
+    openRouterKey,
+    selectedModel
   } = useStore();
 
   const [isListening, setIsListening] = useState(false);
@@ -246,6 +249,22 @@ export default function VoiceAgent() {
     setAiResponse('');
     setErrorMsg('');
 
+    const lowerCommand = vCommand.toLowerCase().trim();
+    if (lowerCommand === 'switch to openrouter') {
+      useStore.getState().setLlmProvider('openrouter');
+      setAiResponse("Switched LLM provider to OpenRouter cloud fallback.");
+      speakText("Switched LLM provider to OpenRouter.");
+      setIsProcessing(false);
+      return;
+    }
+    if (lowerCommand === 'switch to ollama') {
+      useStore.getState().setLlmProvider('ollama');
+      setAiResponse("Switched LLM provider to Ollama local offline.");
+      speakText("Switched LLM provider to Ollama.");
+      setIsProcessing(false);
+      return;
+    }
+
     try {
       // 1. Triage context and choose agent
       const chosenAgent = routeAgent(vCommand);
@@ -259,25 +278,46 @@ export default function VoiceAgent() {
         Object.keys(COMMANDS)
       );
 
-      // 3. Dispatch request to Express API server
+      // 3. Dispatch request to Express API server with state preferences
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: vCommand,
           systemPrompt: chosenAgent.systemPrompt,
-          useProvider: 'auto'
+          useProvider: llmProvider,
+          openRouterKey: openRouterKey,
+          model: selectedModel
         })
       });
 
       if (!res.ok) {
-        throw new Error(`Server returned error status code: ${res.status}`);
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server returned error status code: ${res.status}`);
       }
 
       const data = await res.json();
       
       if (data.error) {
         throw new Error(data.error);
+      }
+
+      // Track token usage
+      if (data.usage) {
+        const totalTokens = data.usage.total_tokens || 0;
+        let cost = 0;
+        if (data.provider === 'openrouter') {
+          const rates: Record<string, number> = {
+            'anthropic/claude-3.5-sonnet': 0.000005,
+            'meta-llama/llama-3.1-70b-instruct': 0.0000006,
+            'mistralai/mistral-large': 0.000002,
+            'deepseek/deepseek-coder': 0.00000015,
+            'google/gemini-2.5-flash': 0.00000015
+          };
+          const perToken = rates[selectedModel] || 0.000001; // default $1/million
+          cost = totalTokens * perToken;
+        }
+        useStore.getState().addTokenUsage(totalTokens, cost);
       }
 
       const action = data.response;
