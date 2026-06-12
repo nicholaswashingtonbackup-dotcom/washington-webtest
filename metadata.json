@@ -1,0 +1,6 @@
+{
+  "name": "SiteForge",
+  "description": "Offline-first, voice-powered local visual website builder with media asset processing, multi-agent LLM design, and folder export system using File System Access API.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
