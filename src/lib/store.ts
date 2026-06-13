@@ -26,8 +26,13 @@ interface SiteForgeState {
   // Workspace properties
   viewMode: 'desktop' | 'tablet' | 'mobile';
   activeRightTab: 'properties' | 'pages' | 'scanners' | 'plugins';
-  activeLeftTab: 'components' | 'settings' | 'history' | 'brief';
+  activeLeftTab: 'components' | 'media' | 'settings' | 'history' | 'brief';
   codeViewOpen: boolean;
+  sandboxOpen: boolean;
+
+  // Element Inspector selections
+  activeSelection: string | null;
+  activeSelectionType: string | null;
   
   // Health connections
   ollamaStatus: 'connected' | 'offline' | 'queued' | 'checking';
@@ -79,7 +84,9 @@ interface SiteForgeState {
   // UI helpers
   setViewMode: (mode: 'desktop' | 'tablet' | 'mobile') => void;
   setActiveRightTab: (tab: 'properties' | 'pages' | 'scanners' | 'plugins') => void;
-  setActiveLeftTab: (tab: 'components' | 'settings' | 'history' | 'brief') => void;
+  setActiveLeftTab: (tab: 'components' | 'media' | 'settings' | 'history' | 'brief') => void;
+  setActiveSelection: (id: string | null, type?: string | null) => void;
+  setGalleryLayout: (blockId: string, layout: string) => void;
   toggleCodeView: () => void;
   setOllamaStatus: (status: 'connected' | 'offline' | 'queued' | 'checking', models?: string[]) => void;
   
@@ -99,15 +106,29 @@ interface SiteForgeState {
   
   // Assets loaders
   loadAssets: () => Promise<void>;
-  uploadNewAsset: (name: string, type: string, dataUrl: string, size: number) => Promise<void>;
+  uploadNewAsset: (name: string, type: string, data: Blob | string, size: number, folder?: string, tags?: string[]) => Promise<void>;
   deleteOldAsset: (id: string) => Promise<void>;
   
   // Running plugins
   togglePlugin: (id: string) => void;
   
+  // Sandbox visibility state
+  setSandboxOpen: (open: boolean) => void;
+  toggleSandbox: () => void;
+  
   // Scans triggers
   runAudits: () => void;
   applyHTMLSanitizerHeal: () => void;
+
+  // Module 5 Settings and States
+  isFullscreen: boolean;
+  setIsFullscreen: (full: boolean) => void;
+  isElectronMode: boolean;
+  setElectronMode: (electro: boolean) => void;
+  autoSave: boolean;
+  setAutoSave: (v: boolean) => void;
+  voiceActive: boolean;
+  setVoiceActive: (v: boolean) => void;
 }
 
 const vc = new VersionControlManager();
@@ -163,6 +184,7 @@ export const useStore = create<SiteForgeState>((set, get) => {
     activeRightTab: 'properties',
     activeLeftTab: 'components',
     codeViewOpen: false,
+    sandboxOpen: false,
     ollamaStatus: 'checking',
     availableModels: [],
     
@@ -173,8 +195,16 @@ export const useStore = create<SiteForgeState>((set, get) => {
     tokenUsage: parseInt(localStorage.getItem('siteforge_token_usage') || '0', 10),
     estimatedCost: parseFloat(localStorage.getItem('siteforge_estimated_cost') || '0.00'),
     assets: [],
+    activeSelection: null,
+    activeSelectionType: null,
     safetyLogs: [],
     activePlugins: BUILTIN_PLUGINS,
+    
+    // Module 5 Initial State Settings
+    isFullscreen: false,
+    isElectronMode: localStorage.getItem('siteforge_electron_mode') === 'true',
+    autoSave: localStorage.getItem('siteforge_auto_save') !== 'false',
+    voiceActive: localStorage.getItem('siteforge_voice_active') !== 'false',
     
     undoStackSize: 1,
     redoStackSize: 0,
@@ -345,6 +375,8 @@ export const useStore = create<SiteForgeState>((set, get) => {
     setActiveRightTab: (tab) => set({ activeRightTab: tab }),
     setActiveLeftTab: (tab) => set({ activeLeftTab: tab }),
     toggleCodeView: () => set((state) => ({ codeViewOpen: !state.codeViewOpen })),
+    setSandboxOpen: (open) => set({ sandboxOpen: open }),
+    toggleSandbox: () => set((state) => ({ sandboxOpen: !state.sandboxOpen })),
 
     setOllamaStatus: (status, models) => set((state) => ({
       ollamaStatus: status,
@@ -452,12 +484,80 @@ export const useStore = create<SiteForgeState>((set, get) => {
       }
     },
 
-    uploadNewAsset: async (name, type, dataUrl, size) => {
+    uploadNewAsset: async (name, type, data, size, folder, tags) => {
       try {
-        await storeLocalAsset(name, type, dataUrl, size);
+        let finalBlob: Blob;
+        if (data instanceof Blob) {
+          finalBlob = data;
+        } else if (typeof data === 'string' && data.startsWith('data:')) {
+          const parts = data.split(';base64,');
+          const mimeType = parts[0].split(':')[1] || type;
+          const raw = window.atob(parts[1] || parts[0]);
+          const rawLength = raw.length;
+          const uInt8Array = new Uint8Array(rawLength);
+          for (let i = 0; i < rawLength; ++i) {
+            uInt8Array[i] = raw.charCodeAt(i);
+          }
+          finalBlob = new Blob([uInt8Array], { type: mimeType });
+        } else {
+          finalBlob = new Blob([data], { type });
+        }
+
+        await storeLocalAsset(name, type, finalBlob, folder, tags);
         await get().loadAssets();
       } catch (err) {
         console.error("IndexedDB asset put failure:", err);
+      }
+    },
+
+    setActiveSelection: (id, type = null) => {
+      set({ activeSelection: id, activeSelectionType: type });
+    },
+
+    setGalleryLayout: (blockId, layout) => {
+      const { pages, activePageId } = get();
+      const page = pages.find(p => p.id === activePageId);
+      if (!page) return;
+
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(page.html, "text/html");
+      let block = doc.getElementById(blockId) || doc.querySelector(`#${blockId}`);
+      if (!block && (blockId === 'gallery' || !blockId)) {
+        block = doc.querySelector('section#gallery') || doc.querySelector('#gallery') || doc.querySelector('section');
+      }
+
+      if (block) {
+        const gridContainer = block.querySelector('.grid, .flex') || block;
+        if (gridContainer) {
+          if (layout === "GRID") {
+            gridContainer.className = "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6";
+          } else if (layout === "MASONRY") {
+            gridContainer.className = "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 [&>*]:mb-4";
+          } else if (layout === "BENTO") {
+            gridContainer.className = "grid grid-cols-1 md:grid-cols-4 gap-4 auto-rows-[220px]";
+            const items = gridContainer.children;
+            if (items.length >= 3) {
+              items[0].className = (items[0].className || "") + " md:col-span-2 md:row-span-2";
+              items[1].className = (items[1].className || "") + " md:col-span-2";
+            }
+          } else if (layout === "CAROUSEL") {
+            gridContainer.className = "flex overflow-x-auto gap-6 pb-4 scrollbar snap-x snap-mandatory";
+            Array.from(gridContainer.children).forEach(ch => {
+              ch.className = (ch.className || "") + " shrink-0 w-80 snap-center";
+            });
+          } else if (layout === "TIMELINE") {
+            gridContainer.className = "relative border-l border-slate-700 ml-4 pl-8 space-y-10 flex flex-col";
+          } else if (layout === "FILMSTRIP") {
+            gridContainer.className = "flex overflow-x-auto gap-4 py-4 px-2 bg-slate-950/60 rounded-xl scrollbar-thin";
+            Array.from(gridContainer.children).forEach(ch => {
+              ch.className = (ch.className || "") + " shrink-0 w-96";
+            });
+          }
+        }
+
+        const nextHTML = doc.body.innerHTML;
+        get().updateActivePageCanvas(nextHTML);
+        get().createHistoryCheckpoint(`Set Gallery Layout: ${layout}`);
       }
     },
 
@@ -512,6 +612,23 @@ export const useStore = create<SiteForgeState>((set, get) => {
       });
       get().createHistoryCheckpoint("Auto-Healed HTML Sandbox");
       get().runAudits();
+    },
+
+    // Module 5 setters
+    setIsFullscreen: (full) => {
+      set({ isFullscreen: full });
+    },
+    setElectronMode: (electro) => {
+      localStorage.setItem('siteforge_electron_mode', electro ? 'true' : 'false');
+      set({ isElectronMode: electro });
+    },
+    setAutoSave: (v) => {
+      localStorage.setItem('siteforge_auto_save', v ? 'true' : 'false');
+      set({ autoSave: v });
+    },
+    setVoiceActive: (v) => {
+      localStorage.setItem('siteforge_voice_active', v ? 'true' : 'false');
+      set({ voiceActive: v });
     }
   };
 });

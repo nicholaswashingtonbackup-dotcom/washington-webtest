@@ -8,6 +8,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
+import { verifyAndPerformExport } from './server_utils/export-verification';
 
 dotenv.config();
 
@@ -183,17 +184,32 @@ app.post('/api/ai/chat', async (req, res) => {
 
   // 3. Fallback to server-side cloud Gemini if Ollama offline, or explicitly requested
   if (geminiClient) {
-    try {
-      console.log("[AI Router] Querying cloud-based Gemini (gemini-3.5-flash)...");
-      const geminiRes = await geminiClient.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: compiledPrompt,
-        config: {
-          responseMimeType: "application/json",
-          temperature: 0.7
-        }
-      });
+    const modelsToTry = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+    let geminiRes = null;
+    let lastError = null;
 
+    for (const modelName of modelsToTry) {
+      try {
+        console.log(`[AI Router] Querying cloud-based Gemini with model ${modelName}...`);
+        geminiRes = await geminiClient.models.generateContent({
+          model: modelName,
+          contents: compiledPrompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.7
+          }
+        });
+        if (geminiRes) {
+          console.log(`[AI Router] Generation succeeded using model ${modelName}`);
+          break;
+        }
+      } catch (gErr: any) {
+        lastError = gErr;
+        console.warn(`[AI Router] Cloud Gemini model ${modelName} call failed, trying next fallback... Status/Error:`, gErr?.message || gErr);
+      }
+    }
+
+    if (geminiRes) {
       const rawText = geminiRes.text || "";
       const cleaned = cleanJSONString(rawText);
       
@@ -214,8 +230,8 @@ app.post('/api/ai/chat', async (req, res) => {
         });
         return;
       }
-    } catch (gErr: any) {
-      console.error("[AI Router] Cloud Gemini call failed:", gErr);
+    } else {
+      console.error("[AI Router] All cloud Gemini call fallbacks exhausted. Error:", lastError);
     }
   }
 
@@ -289,6 +305,33 @@ app.post('/api/ai/test-connection', async (req, res) => {
         message: "Ollama is unreachable on http://localhost:11434. Please ensure Ollama is installed and running, or switch to OpenRouter." 
       });
     }
+  }
+});
+
+// 2.9 Verified Export Endpoint
+app.post('/api/export/verify', async (req, res) => {
+  const { path: exportPath, htmlContent, reactContent } = req.body;
+
+  if (!exportPath) {
+    res.status(400).json({
+      export_status: "failed",
+      error: "Missing output file path",
+      files_written: 0,
+      path: ""
+    });
+    return;
+  }
+
+  try {
+    const result = await verifyAndPerformExport(exportPath, htmlContent || "", reactContent || "");
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({
+      export_status: "failed",
+      error: err.message || "Write stream failure",
+      files_written: 0,
+      path: exportPath
+    });
   }
 });
 

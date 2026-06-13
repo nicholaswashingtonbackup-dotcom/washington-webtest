@@ -188,66 +188,66 @@ export default function OneShotGenerator({ onClose }: OneShotGeneratorProps) {
   };
 
   return (
-    <div id="oneshot-builder-modal" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
-      <div class="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 to-cyan-500/10 pointer-events-none"></div>
+    <div id="oneshot-builder-modal" className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 to-cyan-500/10 pointer-events-none"></div>
 
-      <div class="relative z-10">
-        <div class="flex items-center gap-2 mb-3">
-          <Sparkles class="w-5 h-5 text-indigo-400 rotate-12" />
-          <h3 class="text-base font-bold text-slate-100 flex items-center gap-2 uppercase tracking-wide">
+      <div className="relative z-10">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="w-5 h-5 text-indigo-400 rotate-12" />
+          <h3 className="text-base font-bold text-slate-100 flex items-center gap-2 uppercase tracking-wide">
             One-Shot AI Website Architect
           </h3>
         </div>
-        <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+        <p className="text-xs text-slate-400 mb-5 leading-relaxed">
           Type or dictate any complete brand descriptor (business objective, tone, desired colors). The system feeds your prompt to the 5 specialized designer agents, creating full responsive multi-page systems instantly.
         </p>
 
         {isGenerating ? (
-          <div class="flex flex-col items-center justify-center py-10 text-center gap-4">
-            <Loader2 class="w-8 h-8 animate-spin text-indigo-400" />
-            <div class="text-xs font-mono text-cyan-400 tracking-wider animate-pulse">{currentStep}</div>
-            <div class="w-48 h-1 bg-slate-800 rounded-full overflow-hidden">
-              <div class="h-full bg-indigo-500 animate-[loading_8s_ease-in-out_infinite] rounded-full" style={{ width: '40%' }}></div>
+          <div className="flex flex-col items-center justify-center py-10 text-center gap-4">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+            <div className="text-xs font-mono text-cyan-400 tracking-wider animate-pulse">{currentStep}</div>
+            <div className="w-48 h-1 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-500 animate-[loading_8s_ease-in-out_infinite] rounded-full" style={{ width: '40%' }}></div>
             </div>
           </div>
         ) : successInfo ? (
-          <div class="flex flex-col items-center justify-center py-8 text-center gap-3">
-            <CheckCircle class="w-10 h-10 text-emerald-500" />
-            <span class="text-xs font-semibold text-slate-200">Corporate Canvas Deployed!</span>
-            <p class="text-[11px] text-slate-400 max-w-sm">{successInfo}</p>
+          <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+            <CheckCircle className="w-10 h-10 text-emerald-500" />
+            <span className="text-xs font-semibold text-slate-200">Corporate Canvas Deployed!</span>
+            <p className="text-[11px] text-slate-400 max-w-sm">{successInfo}</p>
           </div>
         ) : (
-          <div class="space-y-4">
+          <div className="space-y-4">
             <textarea
               rows={4}
               placeholder="e.g. Build a website for my security company called ShieldGuard, we sell cybersecurity software to enterprise clients, professional tone, blue and dark theme"
               value={brief}
               onChange={(e) => setBrief(e.target.value)}
-              class="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             ></textarea>
 
-            <div class="flex gap-2">
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setBrief("Build a minimalist design agency called BoldStudio with a high-contrast magenta and dark look, to showcase brand case studies")}
-                class="px-2.5 py-1.5 text-[10px] bg-slate-950 border border-slate-850 hover:border-slate-800 text-slate-400 hover:text-slate-200 rounded-md transition"
+                className="px-2.5 py-1.5 text-[10px] bg-slate-950 border border-slate-850 hover:border-slate-800 text-slate-400 hover:text-slate-200 rounded-md transition"
               >
                 Agency Idea
               </button>
               <button
                 type="button"
                 onClick={() => setBrief("Write a landing page for my cybersecurity company called ShieldGuard, professional tone, deep blue and dark neon, enterprise clients, safety compliance headings")}
-                class="px-2.5 py-1.5 text-[10px] bg-slate-950 border border-slate-850 hover:border-slate-800 text-slate-400 hover:text-slate-200 rounded-md transition"
+                className="px-2.5 py-1.5 text-[10px] bg-slate-950 border border-slate-850 hover:border-slate-800 text-slate-400 hover:text-slate-200 rounded-md transition"
               >
                 Security Idea
               </button>
             </div>
 
-            <div class="flex justify-end gap-2 text-xs pt-4 border-t border-slate-850">
+            <div className="flex justify-end gap-2 text-xs pt-4 border-t border-slate-850">
               {onClose && (
                 <button
                   onClick={onClose}
-                  class="px-4 py-2 bg-slate-950 hover:bg-slate-850 rounded-lg text-slate-400 transition"
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-850 rounded-lg text-slate-400 transition"
                 >
                   Close
                 </button>
@@ -255,9 +255,9 @@ export default function OneShotGenerator({ onClose }: OneShotGeneratorProps) {
               <button
                 onClick={executeOneShotBuild}
                 disabled={!brief.trim()}
-                class="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:opacity-90 disabled:opacity-40 rounded-lg text-white font-semibold flex items-center gap-1.5 transition active:scale-95 text-xs shadow-lg shadow-indigo-950/40"
+                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:opacity-90 disabled:opacity-40 rounded-lg text-white font-semibold flex items-center gap-1.5 transition active:scale-95 text-xs shadow-lg shadow-indigo-950/40"
               >
-                <Sparkles class="w-3.5 h-3.5 rotate-12" />
+                <Sparkles className="w-3.5 h-3.5 rotate-12" />
                 Build Full Site One-Shot
               </button>
             </div>

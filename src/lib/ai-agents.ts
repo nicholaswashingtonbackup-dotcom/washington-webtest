@@ -19,16 +19,15 @@ export const AGENTS: Record<string, AgentDescriptor> = {
     id: "DESIGNER",
     name: "Designer Agent",
     role: "Senior UI/UX Designer & Theme Architect",
-    model: "llama3",
+    model: "llama3.1",
     systemPrompt: `
-You are a senior UI/UX designer. Your focus is on visual hierarchy, negative spacing, layout composition, and theme consistency.
+Senior UI/UX designer. Visual systems.
+You focus on layout, colors, typography, and spacing.
 You must return your choices using the pre-defined Command Registry COMMANDS structure.
 Always adapt your generated styling parameters to the active DesignTokens and custom colors.
-Never use generic or dull styling presets.
-You can ONLY use commands from the Command Registry. 
 Respond with a single JSON object (with no markdown wrappers like \`\`\`json) of format:
 {
-  "command": "add_hero" | "change_background" | etc,
+  "command": "add_hero" | "change_background" | "change_color" | "change_font" | etc,
   "params": { ... }
 }
 `.trim()
@@ -37,28 +36,27 @@ Respond with a single JSON object (with no markdown wrappers like \`\`\`json) of
     id: "COPYWRITER",
     name: "Copywriter Agent",
     role: "Professional Conversion Copywriter",
-    model: "mistral",
+    model: "llama3.1",
     systemPrompt: `
-You are a professional conversion copywriter. Write brilliant, compelling, on-brand website lines, headings, paragraphs, and CTAs.
-Structure content to evoke emotional response and trust based on the active target audience.
+Conversion-focused copywriter. Punchy, clear.
+Write headlines, body text, and CTAs.
 You must return your choices using the Command Registry structure.
-You can ONLY use commands from the Command Registry. 
 Respond with a single JSON object (with no markdown wrappers) of format:
 {
-  "command": "update_text" | "generate_content",
-  "params": { ... }
+  "command": "update_text",
+  "params": { "text": "compelling header copy..." }
 }
 `.trim()
   },
   SEO: {
     id: "SEO",
     name: "SEO Agent",
-    role: "SEO Consultant & Structured Metadata Analyst",
-    model: "llama3",
+    role: "SEO Specialist & Structured Metadata Analyst",
+    model: "mistral",
     systemPrompt: `
-You are an SEO optimization expert. Optimize page titles, descriptions, open-graph cards, sitemap priorities, and keywords.
+SEO specialist. JSON-LD schema. Alt text always.
+Optimize titles, meta tags, and schema. Add alt text of images.
 You must return your choices using the Command Registry structure.
-You can ONLY use commands from the Command Registry. 
 Respond with a single JSON object (with no markdown wrappers) of format:
 {
   "command": "generate_seo",
@@ -70,12 +68,11 @@ Respond with a single JSON object (with no markdown wrappers) of format:
     id: "ACCESSIBILITY",
     name: "A11y Agent",
     role: "Accessibility Compliance Auditor",
-    model: "codellama",
+    model: "llama3.1",
     systemPrompt: `
-You are an accessibility auditor. Ensure compliance with WCAG 2.1 AA and AAA standards.
-Optimize keyboard tab ordering, form labels, SVG screen reader support, descriptive links, and contrast ratios.
+Accessibility auditor. WCAG 2.1 AA.
+Analyze and repair contrast ratios, ARIA labels, and keyboard nav.
 You must return your choices using the Command Registry structure.
-You can ONLY use commands from the Command Registry. 
 Respond with a single JSON object (with no markdown wrappers) of format:
 {
   "command": "fix_accessibility" | "check_accessibility",
@@ -89,8 +86,8 @@ Respond with a single JSON object (with no markdown wrappers) of format:
     role: "Principal Frontend Developer",
     model: "codellama",
     systemPrompt: `
-You are a senior frontend developer. Focus on high performance, secure structures, and clean HTML/JS.
-Validate components against XSS hazards, remove redundant styles, and optimize assets.
+Senior frontend dev. Clean semantic code.
+Focus on code generation, clean structures, and export logic.
 You can ONLY use commands from the Command Registry. 
 Respond with a single JSON object (with no markdown wrappers) of format:
 {
@@ -107,11 +104,26 @@ Respond with a single JSON object (with no markdown wrappers) of format:
 export function routeAgent(query: string): AgentDescriptor {
   const normalized = query.toLowerCase();
 
+  // Explicit routing matches
+  if (normalized.includes("make it prettier")) {
+    return AGENTS.DESIGNER;
+  }
+  if (normalized.includes("write text") || normalized.includes("headline") || normalized.includes("copywriter") || normalized.includes("slogan")) {
+    return AGENTS.COPYWRITER;
+  }
+  if (normalized.includes("optimize") || normalized.includes("seo") || normalized.includes("metadata")) {
+    return AGENTS.SEO;
+  }
+  if (normalized.includes("accessible?") || normalized.includes("accessibility") || normalized.includes("contrast") || normalized.includes("wcag")) {
+    return AGENTS.ACCESSIBILITY;
+  }
+  if (normalized.includes("export") || normalized.includes("code") || normalized.includes("developer")) {
+    return AGENTS.DEVELOPER;
+  }
+
   // 1. Accessibility queries
   if (
-    normalized.includes("accessibility") || 
     normalized.includes("a11y") || 
-    normalized.includes("contrast") || 
     normalized.includes("alt tag") || 
     normalized.includes("aria") || 
     normalized.includes("screen reader") || 
@@ -122,8 +134,6 @@ export function routeAgent(query: string): AgentDescriptor {
 
   // 2. SEO queries
   if (
-    normalized.includes("seo") || 
-    normalized.includes("metadata") || 
     normalized.includes("site title") || 
     normalized.includes("keywords") || 
     normalized.includes("google search") ||
@@ -135,20 +145,16 @@ export function routeAgent(query: string): AgentDescriptor {
   // 3. Copywriter queries
   if (
     normalized.includes("write") || 
-    normalized.includes("headline") || 
     normalized.includes("copy") ||
     normalized.includes("text") ||
     normalized.includes("paragraph") || 
-    normalized.includes("catchy") || 
-    normalized.includes("slogan")
+    normalized.includes("catchy")
   ) {
     return AGENTS.COPYWRITER;
   }
 
   // 4. Developer queries
   if (
-    normalized.includes("code") || 
-    normalized.includes("optimize") || 
     normalized.includes("performance") || 
     normalized.includes("speed") || 
     normalized.includes("fix") ||

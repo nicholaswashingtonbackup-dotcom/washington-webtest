@@ -14,7 +14,8 @@ export default function WorkspaceCanvas() {
     designTokens, 
     viewMode, 
     setViewMode,
-    updateActivePageCanvas 
+    updateActivePageCanvas,
+    setActiveSelection
   } = useStore();
 
   const [rawHTML, setRawHTML] = useState('');
@@ -93,21 +94,126 @@ export default function WorkspaceCanvas() {
         </div>
 
         <script>
-          // Basic interactive text editing setup
+          // Element Inspector overlay + hover renderer
+          const overlay = document.createElement("div");
+          overlay.id = "df-inspector-element-overlay";
+          overlay.style.position = "absolute";
+          overlay.style.pointerEvents = "none";
+          overlay.style.zIndex = "99999";
+          overlay.style.borderWidth = "2px";
+          overlay.style.borderStyle = "solid";
+          overlay.style.transition = "all 0.1s ease";
+          overlay.style.display = "none";
+          
+          const label = document.createElement("div");
+          label.style.position = "absolute";
+          label.style.top = "-24px";
+          label.style.left = "-2px";
+          label.style.padding = "2px 8px";
+          label.style.fontSize = "10px";
+          label.style.fontWeight = "bold";
+          label.style.color = "white";
+          label.style.borderRadius = "4px";
+          label.style.fontFamily = "sans-serif";
+          label.style.boxShadow = "0 2px 4px rgba(0,0,0,0.2)";
+          overlay.appendChild(label);
+          document.body.appendChild(overlay);
+
+          document.addEventListener('mouseover', (e) => {
+            const target = e.target;
+            if (!target || target === document.body || target === document.documentElement) return;
+            
+            // Find section or block element
+            const block = target.closest("#df-sandbox-node > section, #df-sandbox-node > header, #df-sandbox-node > footer, #df-sandbox-node > div") || target.closest("button, img, iframe, article");
+            if (!block) return;
+
+            let type = "Section";
+            let color = "#3b82f6"; // Section: Blue
+            let icon = "🟦";
+
+            const tag = block.tagName.toLowerCase();
+            const idStr = (block.id || "").toLowerCase();
+            const classStr = (block.className || "").toLowerCase();
+
+            if (tag === 'header' || idStr.includes("nav") || classStr.includes("nav") || idStr.includes("menu")) {
+              type = "Navbar";
+              color = "#6366f1"; // Navbar: indigo
+              icon = "➕";
+            } else if (tag === 'footer' || idStr.includes("footer") || classStr.includes("footer")) {
+              type = "Footer";
+              color = "#78350f"; // Footer: brown
+              icon = "🟫";
+            } else if (idStr.includes("hero") || classStr.includes("hero")) {
+              type = "Hero";
+              color = "#a855f7"; // Hero: purple
+              icon = "🟪";
+            } else if (idStr.includes("gallery") || classStr.includes("gallery") || idStr.includes("portfolio")) {
+              type = "Gallery";
+              color = "#10b981"; // Gallery: green
+              icon = "🟩";
+            } else if (tag === 'button' || classStr.includes("btn")) {
+              type = "Button";
+              color = "#eab308"; // Button: yellow
+              icon = "🟨";
+            } else if (tag === 'video' || tag === 'iframe' || classStr.includes("video")) {
+              type = "Video";
+              color = "#ef4444"; // Video: red
+              icon = "🟥";
+            }
+
+            if (!block.id) {
+              block.id = "block_" + type.toLowerCase() + "_" + Math.random().toString(36).substring(2, 8);
+            }
+
+            const rect = block.getBoundingClientRect();
+            const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+            const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+
+            overlay.style.width = rect.width + "px";
+            overlay.style.height = rect.height + "px";
+            overlay.style.top = (rect.top + scrollY) + "px";
+            overlay.style.left = (rect.left + scrollX) + "px";
+            overlay.style.borderColor = color;
+            overlay.style.display = "block";
+            
+            label.style.backgroundColor = color;
+            label.textContent = icon + " " + type + " (#" + block.id + ")";
+            block.setAttribute("data-df-inspected-type", type);
+          });
+
+          document.addEventListener('mouseout', () => {
+            overlay.style.display = "none";
+          });
+
+          // Basic interactive text editing setup + selection communication
           document.addEventListener('click', (e) => {
             const target = e.target;
             if (target && target.tagName !== 'BODY' && target.tagName !== 'HTML') {
-              // Trigger a basic contenteditable click to let users change text details directly inside the iframe!
-              target.contentEditable = "true";
-              target.focus();
-              target.addEventListener('blur', () => {
-                target.removeAttribute('contentEditable');
-                // Communicate next state changes
-                window.parent.postMessage({
-                  type: 'DF_CANVAS_HTML_UPDATE',
-                  html: document.getElementById('df-sandbox-node').innerHTML
-                }, '*');
-              });
+              const block = target.closest("#df-sandbox-node > section, #df-sandbox-node > header, #df-sandbox-node > footer, #df-sandbox-node > div") || target.closest("button, img, iframe, article") || target;
+              const type = block.getAttribute("data-df-inspected-type") || "Section";
+              if (!block.id) {
+                block.id = "block_click_" + Math.random().toString(36).substring(2, 8);
+              }
+
+              // Send selection report
+              window.parent.postMessage({
+                type: 'DF_BLOCK_SELECTED',
+                blockId: block.id,
+                blockType: type
+              }, '*');
+              
+              // Trigger inline editable text
+              if (target.tagName !== 'IMG' && target.tagName !== 'IFRAME' && target.tagName !== 'VIDEO') {
+                target.contentEditable = "true";
+                target.focus();
+                target.addEventListener('blur', () => {
+                  target.removeAttribute('contentEditable');
+                  window.parent.postMessage({
+                    type: 'DF_CANVAS_HTML_UPDATE',
+                    html: document.getElementById('df-sandbox-node').innerHTML
+                  }, '*');
+                });
+              }
             }
           });
 
@@ -132,15 +238,19 @@ export default function WorkspaceCanvas() {
   };
 
   useEffect(() => {
-    // Listen for inline html updates from within the iframe's design interaction node
+    // Listen for inline html updates and selections from within the iframe
     const handleMessage = (e: MessageEvent) => {
-      if (e.data && e.data.type === 'DF_CANVAS_HTML_UPDATE') {
-        handleHTMLChange(e.data.html);
+      if (e.data) {
+        if (e.data.type === 'DF_CANVAS_HTML_UPDATE') {
+          handleHTMLChange(e.data.html);
+        } else if (e.data.type === 'DF_BLOCK_SELECTED') {
+          setActiveSelection(e.data.blockId, e.data.blockType);
+        }
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [setActiveSelection]);
 
   // Compute width based on simulated screen mode
   const widthClasses: Record<string, string> = {
@@ -156,57 +266,57 @@ export default function WorkspaceCanvas() {
   };
 
   return (
-    <div id="canvas-main-viewport" class="flex-1 bg-[#12132b] flex flex-col items-center justify-center p-4 relative overflow-hidden h-full">
+    <div id="canvas-main-viewport" className="flex-1 bg-[#12132b] flex flex-col items-center justify-center p-4 relative overflow-hidden h-full">
       {/* Upper viewport sizing bar */}
-      <div class="w-full flex items-center justify-between mb-2 text-xs text-slate-400 absolute top-4 px-6 z-10">
-        <div class="flex items-center gap-2">
-          <span class="font-bold text-[10px] uppercase tracking-wider text-slate-500">Live Workspace :</span>
-          <span class="text-slate-300 font-mono font-bold text-[11px] bg-slate-950/60 py-1 px-2.5 rounded-md">{activePage.name} page</span>
+      <div className="w-full flex items-center justify-between mb-2 text-xs text-slate-400 absolute top-4 px-6 z-10">
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-[10px] uppercase tracking-wider text-slate-500">Live Workspace :</span>
+          <span className="text-slate-300 font-mono font-bold text-[11px] bg-slate-950/60 py-1 px-2.5 rounded-md">{activePage.name} page</span>
         </div>
         
         {/* Device Mode Selectors */}
-        <div class="flex items-center bg-slate-950/65 border border-slate-800 p-0.5 rounded-lg shadow-inner">
+        <div className="flex items-center bg-slate-950/65 border border-slate-800 p-0.5 rounded-lg shadow-inner">
           <button 
             onClick={() => setViewMode('desktop')}
-            class={`p-1.5 rounded-md transition ${viewMode === 'desktop' ? 'bg-violet-600 text-white shadow' : 'hover:text-slate-200'}`}
+            className={`p-1.5 rounded-md transition ${viewMode === 'desktop' ? 'bg-violet-600 text-white shadow' : 'hover:text-slate-200'}`}
             title="Desktop Mode Simulator"
           >
-            <Monitor class="w-4 h-4" />
+            <Monitor className="w-4 h-4" />
           </button>
           <button 
             onClick={() => setViewMode('tablet')}
-            class={`p-1.5 rounded-md transition ${viewMode === 'tablet' ? 'bg-violet-600 text-white shadow' : 'hover:text-slate-200'}`}
+            className={`p-1.5 rounded-md transition ${viewMode === 'tablet' ? 'bg-violet-600 text-white shadow' : 'hover:text-slate-200'}`}
             title="Tablet Mode Simulator"
           >
-            <Tablet class="w-4 h-4" />
+            <Tablet className="w-4 h-4" />
           </button>
           <button 
             onClick={() => setViewMode('mobile')}
-            class={`p-1.5 rounded-md transition ${viewMode === 'mobile' ? 'bg-violet-600 text-white shadow' : 'hover:text-slate-200'}`}
+            className={`p-1.5 rounded-md transition ${viewMode === 'mobile' ? 'bg-violet-600 text-white shadow' : 'hover:text-slate-200'}`}
             title="Mobile Mode Simulator"
           >
-            <Smartphone class="w-4 h-4" />
+            <Smartphone className="w-4 h-4" />
           </button>
         </div>
 
-        <div class="text-[10px] font-mono text-slate-500">{modePixel[viewMode]}</div>
+        <div className="text-[10px] font-mono text-slate-500">{modePixel[viewMode]}</div>
       </div>
 
       {/* Frame Canvas Wrapper */}
       <div 
         id="simulated-browser-frame"
-        class={`transition-all duration-300 bg-slate-950 overflow-hidden flex items-center justify-center ${widthClasses[viewMode]} shadow-2xl relative mt-8`}
+        className={`transition-all duration-300 bg-slate-950 overflow-hidden flex items-center justify-center ${widthClasses[viewMode]} shadow-2xl relative mt-8`}
       >
         <iframe
           ref={iframeRef}
           srcDoc={compileIframeDoc()}
-          class="w-full h-full border-none bg-slate-950"
+          className="w-full h-full border-none bg-slate-950"
           title="SiteForge Active Iframe Sandbox"
           referrerPolicy="no-referrer"
         />
 
         {/* Small watermarks describing interaction rules */}
-        <div class="absolute bottom-3 right-4 bg-slate-950/80 border border-slate-800 backdrop-blur-md py-1 px-2 rounded text-[9px] font-semibold text-slate-400 pointer-events-none tracking-wider uppercase">
+        <div className="absolute bottom-3 right-4 bg-slate-950/80 border border-slate-800 backdrop-blur-md py-1 px-2 rounded text-[9px] font-semibold text-slate-400 pointer-events-none tracking-wider uppercase">
           💡 Click headers / text inside to inline edit
         </div>
       </div>
